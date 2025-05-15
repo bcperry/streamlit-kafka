@@ -1,0 +1,8 @@
+streamlit
+numpy
+pandas
+plotly
+confluent-kafka
+python-dotenv
+scikit-learn
+matplotlib
