@@ -14,3 +14,4 @@ wheels/
 
 # Docker and logging
 /zookeeper
+/postgres_data

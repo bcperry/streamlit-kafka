@@ -7,6 +7,7 @@ networks:
 volumes:
   kafka-data:
   zookeeper-data:
+  postgres-data:
 
 services:
   # ZooKeeper Service
@@ -176,3 +177,72 @@ services:
         limits:
           cpus: '0.2'
           memory: 128M
+          
+  # PostgreSQL Service
+  postgres:
+    image: postgres:15-alpine
+    hostname: postgres
+    container_name: postgres
+    networks:
+      - kafka-net
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: sensordata
+      # Production settings
+      POSTGRES_MAX_CONNECTIONS: 100
+      POSTGRES_SHARED_BUFFERS: 256MB
+      POSTGRES_EFFECTIVE_CACHE_SIZE: 768MB
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
+          
+  # Kafka to PostgreSQL Connector Service
+  kafka-to-postgres:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: kafka-to-postgres
+    networks:
+      - kafka-net
+    depends_on:
+      - kafka
+      - postgres
+    environment:
+      - KAFKA_BROKER=kafka:29092
+      - TOPIC=sensor-data
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_DB=sensordata
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - BATCH_SIZE=100
+      - MAX_POLL_INTERVAL=1.0
+      - PYTHONUNBUFFERED=1
+    command: python kafka_to_postgres.py
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import socket; s=socket.socket(); s.connect(('kafka', 29092)) and s.close(); s=socket.socket(); s.connect(('postgres', 5432)) and s.close()"]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+    deploy:
+      mode: replicated
+      replicas: 2  # Multiple connector instances for high availability
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M

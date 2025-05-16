@@ -6,3 +6,5 @@ confluent-kafka
 python-dotenv
 scikit-learn
 matplotlib
+psycopg2-binary
+prettytable

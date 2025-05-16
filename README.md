@@ -11,6 +11,7 @@ A real-time IoT sensor analytics dashboard that consumes data from Kafka topics 
 - **Real-time Data Consumption** - Stream IoT sensor data directly from Kafka topics
 - **Interactive Visualizations** - Monitor temperature, humidity, and pressure readings in real-time
 - **Anomaly Detection** - Identify unusual patterns in sensor data with multiple detection algorithms
+- **PostgreSQL Data Persistence** - Store all sensor data in PostgreSQL for historical analysis
 - **Multi-page Application** - Separate pages for data consumption, visualization, and anomaly detection
 - **Azure ML Integration** - Ready for edge deployments and cloud connectivity
 
@@ -44,6 +45,11 @@ Create a `.env` file in the root directory:
 ```
 KAFKA_BROKER=localhost:9092
 TOPIC=your-kafka-topic
+POSTGRES_HOST=localhost
+POSTGRES_PORT=5432
+POSTGRES_DB=sensordata
+POSTGRES_USER=postgres
+POSTGRES_PASSWORD=postgres
 ```
 
 3. **Install dependencies**
@@ -88,6 +94,18 @@ For debugging or direct access to the Kafka consumer:
 python consumer.py
 ```
 
+### PostgreSQL Integration
+
+To save data to PostgreSQL database:
+
+```bash
+# Start the Kafka to PostgreSQL connector
+python kafka_to_postgres.py
+
+# Query the PostgreSQL database
+python query_postgres.py
+```
+
 ### 🐳 Docker Deployment
 
 Deploy the entire application stack with Docker Compose:
@@ -111,8 +129,13 @@ The Docker deployment includes:
 - Kafka broker for message handling
 - Kafka producer service for generating simulated IoT data
 - Streamlit dashboard for data visualization and anomaly detection
+- PostgreSQL database for persistent storage of sensor data
+- Kafka-to-PostgreSQL connector for automated data transfer
+- Kafka UI for topic monitoring and management
 
 Access the dashboard at http://localhost:8501 after deployment.
+Access the Kafka UI at http://localhost:8080 for monitoring Kafka topics.
+Access PostgreSQL at localhost:5432 (username: postgres, password: postgres, database: sensordata).
 
 ## 🧠 Anomaly Detection Methods
 
