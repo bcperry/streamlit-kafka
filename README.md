@@ -60,7 +60,9 @@ uv pip install -r requirements.txt
 
 ## 🚀 Usage
 
-### Starting the application
+### Local Development
+
+Run the application locally for development:
 
 ```bash
 # Using standard Python:
@@ -72,7 +74,7 @@ uv run -- streamlit run main.py
 
 ### Producer Simulation
 
-To simulate IoT devices sending data:
+To simulate IoT devices sending data locally:
 
 ```bash
 python producer.py
@@ -85,6 +87,32 @@ For debugging or direct access to the Kafka consumer:
 ```bash
 python consumer.py
 ```
+
+### 🐳 Docker Deployment
+
+Deploy the entire application stack with Docker Compose:
+
+```bash
+# Build and start all services
+docker-compose up --build
+
+# Run in the background
+docker-compose up -d
+
+# View logs
+docker-compose logs -f
+
+# Stop the application
+docker-compose down
+```
+
+The Docker deployment includes:
+- Zookeeper for Kafka coordination
+- Kafka broker for message handling
+- Kafka producer service for generating simulated IoT data
+- Streamlit dashboard for data visualization and anomaly detection
+
+Access the dashboard at http://localhost:8501 after deployment.
 
 ## 🧠 Anomaly Detection Methods
 

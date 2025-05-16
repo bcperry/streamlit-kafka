@@ -207,22 +207,80 @@ class IoTDevice:
 
 
 if __name__ == '__main__':
+    # Wait for Kafka to become available in Docker environment
+    if os.environ.get("KAFKA_BROKER", "").startswith("kafka:"):
+        print("Running in Docker environment, waiting for Kafka to start...")
+        
+        kafka_host = os.environ.get("KAFKA_BROKER").split(":")[0]
+        kafka_port = int(os.environ.get("KAFKA_BROKER").split(":")[1])
+        
+        max_attempts = 20
+        attempt = 0
+        connected = False
+        
+        while not connected and attempt < max_attempts:
+            attempt += 1
+            try:
+                print(f"Attempt {attempt}/{max_attempts}: Connecting to Kafka at {kafka_host}:{kafka_port}...")
+                # Create a socket connection to check if Kafka is available
+                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                sock.settimeout(2)  # 2 second timeout
+                result = sock.connect_ex((kafka_host, kafka_port))
+                sock.close()
+                
+                if result == 0:
+                    print(f"Successfully connected to Kafka at {kafka_host}:{kafka_port}")
+                    connected = True
+                else:
+                    print(f"Kafka not yet available (attempt {attempt}/{max_attempts}), waiting...")
+                    time.sleep(5)  # Wait before retrying
+            except Exception as e:
+                print(f"Error checking Kafka connection: {e}")
+                time.sleep(5)  # Wait before retrying
+        
+        if not connected:
+            print(f"Could not connect to Kafka after {max_attempts} attempts. Will keep trying with the Kafka client.")
 
+    print(f"Connecting to Kafka broker: {os.environ.get('KAFKA_BROKER')}")
+    print(f"Publishing to topic: {os.environ.get('TOPIC')}")
+    
     config = {
         # User-specific properties that you must set
         'bootstrap.servers': os.environ.get("KAFKA_BROKER"),
         'client.id': socket.gethostname(),
 
         # Fixed properties
-        'acks':              'all'
+        'acks': 'all',
+        # Add retry settings for robustness
+        'retries': 5,
+        'retry.backoff.ms': 500
     }
 
-    # Create Producer instance
-    producer = Producer(config)
+    MAX_RETRIES = 10
+    retry_count = 0
+    
+    while retry_count < MAX_RETRIES:
+        try:
+            # Create Producer instance
+            producer = Producer(config)
+            
+            # Test producer connection
+            producer.list_topics(timeout=5)
+            print("Successfully connected to Kafka!")
+            break
+            
+        except Exception as e:
+            retry_count += 1
+            print(f"Failed to connect to Kafka (attempt {retry_count}/{MAX_RETRIES}): {e}")
+            if retry_count >= MAX_RETRIES:
+                print("Max retries reached. Exiting.")
+                import sys
+                sys.exit(1)
+            time.sleep(5)  # Wait before retrying
 
     # Create an IoT device instance
     device_id = os.environ.get("DEVICE_ID", "device_1")
-    refresh_rate = os.environ.get("REFRESH_RATE", 1)
+    refresh_rate = float(os.environ.get("REFRESH_RATE", 1))
     device = IoTDevice(device_id, refresh_rate)
 
     # Optional per-message delivery callback (triggered by poll() or flush())
@@ -230,17 +288,32 @@ if __name__ == '__main__':
     # failed delivery (after retries).
     def delivery_callback(err, msg):
         if err:
-            print('ERROR: Message failed delivery: {}'.format(err))
+            print(f'ERROR: Message failed delivery: {err}')
         else:
-            print("Produced event to topic {topic}: key = {key:12} value = {value:12}".format(
-                topic=msg.topic(), key=msg.key().decode('utf-8'), value=msg.value().decode('utf-8')))
+            print(f"Produced event to topic {msg.topic()}: key = {msg.key().decode('utf-8')}, value length = {len(msg.value())}")
 
     # Produce data by selecting random values from these lists.
     topic = os.environ.get("TOPIC")
     sensor = device_id
 
-    count = 0
-    while True:
-        producer.produce(topic=topic, value=device.emulate(), key=sensor, callback=delivery_callback)
-        producer.poll(0)
-        time.sleep(0.1)  # Simulate a delay between messages
+    print(f"Starting producer loop for device {device_id} with refresh rate {refresh_rate} Hz")
+    message_count = 0
+    try:
+        while True:
+            message = device.emulate()
+            producer.produce(topic=topic, value=message, key=sensor, callback=delivery_callback)
+            producer.poll(0)
+            
+            message_count += 1
+            if message_count % 100 == 0:
+                print(f"Produced {message_count} messages so far")
+                
+            time.sleep(1/float(refresh_rate))  # Control message frequency
+    except KeyboardInterrupt:
+        print("Producer interrupted by user")
+    except Exception as e:
+        print(f"Error in producer: {e}")
+    finally:
+        # Flush any remaining messages
+        producer.flush(30)
+        print("Producer terminated")

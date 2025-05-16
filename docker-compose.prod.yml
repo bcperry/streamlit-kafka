@@ -1,0 +1,178 @@
+version: '3.8'
+
+networks:
+  kafka-net:
+    driver: bridge
+
+volumes:
+  kafka-data:
+  zookeeper-data:
+
+services:
+  # ZooKeeper Service
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.3.2
+    hostname: zookeeper
+    container_name: zookeeper
+    networks:
+      - kafka-net
+    ports:
+      - "2181:2181"
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    volumes:
+      - zookeeper-data:/var/lib/zookeeper/data
+      - zookeeper-data:/var/lib/zookeeper/log
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 1G
+
+  # Kafka Service
+  kafka:
+    image: confluentinc/cp-server:7.3.2
+    hostname: kafka
+    container_name: kafka
+    networks:
+      - kafka-net
+    depends_on:
+      - zookeeper
+    ports:
+      - "9092:9092"
+      - "9101:9101"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: 'zookeeper:2181'
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_CONFLUENT_LICENSE_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_CONFLUENT_BALANCER_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: 'true'
+      KAFKA_DELETE_TOPIC_ENABLE: 'true'
+      KAFKA_LOG_RETENTION_HOURS: 24  # Production setting: retain logs for 24 hours
+      KAFKA_JMX_PORT: 9101
+      KAFKA_JMX_HOSTNAME: localhost
+    volumes:
+      - kafka-data:/var/lib/kafka/data
+    healthcheck:
+      test: ["CMD", "kafka-topics", "--bootstrap-server", "kafka:29092", "--list"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 2G
+
+  # Kafka Producer Service - Multiple instances for high availability
+  kafka-producer:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: kafka-producer
+    networks:
+      - kafka-net
+    depends_on:
+      kafka:
+        condition: service_healthy
+    environment:
+      - KAFKA_BROKER=kafka:29092
+      - TOPIC=sensor-data
+      - DEVICE_ID=device_${HOSTNAME:-docker}_${INSTANCE:-1}
+      - REFRESH_RATE=1
+      - PYTHONUNBUFFERED=1
+    command: python producer.py
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import socket; s=socket.socket(); s.connect(('kafka', 29092))"]
+      interval: 5s
+      timeout: 10s
+      retries: 5
+    deploy:
+      mode: replicated
+      replicas: 3  # Multiple producer instances for high availability
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+
+  # Streamlit Dashboard with load balancing
+  streamlit-dashboard:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: streamlit-dashboard
+    networks:
+      - kafka-net
+    depends_on:
+      kafka:
+        condition: service_healthy
+    ports:
+      - "8501:8501"
+    environment:
+      - KAFKA_BROKER=kafka:29092
+      - TOPIC=sensor-data
+      - PYTHONUNBUFFERED=1
+    volumes:
+      - ./pages:/app/pages
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "--quiet", "http://localhost:8501"]
+      interval: 10s
+      timeout: 10s
+      retries: 3
+    deploy:
+      mode: replicated
+      replicas: 2  # Multiple dashboard instances for high availability
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
+      
+  # Kafka Manager - Web UI for managing Kafka
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: kafka-ui
+    networks:
+      - kafka-net
+    ports:
+      - "8080:8080"
+    depends_on:
+      - kafka
+    environment:
+      KAFKA_CLUSTERS_0_NAME: local
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:29092
+      KAFKA_CLUSTERS_0_ZOOKEEPER: zookeeper:2181
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 1G
+
+  # Add a proxy for production deployment
+  nginx:
+    image: nginx:alpine
+    container_name: kafka-nginx
+    networks:
+      - kafka-net
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - streamlit-dashboard
+      - kafka-ui
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '0.2'
+          memory: 128M

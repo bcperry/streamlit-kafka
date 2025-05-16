@@ -1,0 +1,143 @@
+version: '3.8'
+
+networks:
+  kafka-net:
+    driver: bridge
+
+volumes:
+  kafka-data:
+
+services:
+  # ZooKeeper Service
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.3.2
+    hostname: zookeeper
+    container_name: zookeeper
+    networks:
+      - kafka-net
+    ports:
+      - "2181:2181"
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+      ZOOKEEPER_INIT_LIMIT: 5
+      ZOOKEEPER_SYNC_LIMIT: 2
+    volumes:
+      - ./zookeeper/data:/var/lib/zookeeper/data
+      - ./zookeeper/log:/var/lib/zookeeper/log
+    restart: unless-stopped
+
+  # Kafka Service
+  kafka:
+    image: confluentinc/cp-server:7.3.2
+    hostname: kafka
+    container_name: kafka
+    networks:
+      - kafka-net
+    depends_on:
+      - zookeeper
+    ports:
+      - "9092:9092"
+      - "9101:9101"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: 'zookeeper:2181'
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_METRIC_REPORTERS: io.confluent.metrics.reporter.ConfluentMetricsReporter
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_CONFLUENT_LICENSE_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_CONFLUENT_BALANCER_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: 'true'
+      KAFKA_DELETE_TOPIC_ENABLE: 'true'
+      KAFKA_JMX_PORT: 9101
+      KAFKA_JMX_HOSTNAME: localhost
+      CONFLUENT_METRICS_REPORTER_BOOTSTRAP_SERVERS: kafka:29092
+      CONFLUENT_METRICS_REPORTER_TOPIC_REPLICAS: 1
+      CONFLUENT_METRICS_ENABLE: 'true'
+      CONFLUENT_SUPPORT_CUSTOMER_ID: 'anonymous'
+      KAFKA_LOG_DIRS: '/var/lib/kafka/data'
+    volumes:
+      - kafka-data:/var/lib/kafka/data
+    restart: on-failure
+    healthcheck:
+      test: nc -z kafka 29092 || exit 1
+      interval: 10s
+      timeout: 10s
+      retries: 20
+      start_period: 30s
+
+  # Kafka Producer Service
+  kafka-producer:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: kafka-producer
+    networks:
+      - kafka-net
+    depends_on:
+      kafka:
+        condition: service_healthy
+    environment:
+      - KAFKA_BROKER=kafka:29092
+      - TOPIC=sensor-data
+      - DEVICE_ID=device_docker_1
+      - REFRESH_RATE=1
+      - PYTHONUNBUFFERED=1
+    command: python producer.py
+    restart: on-failure
+    healthcheck:
+      test: ps -ef | grep python | grep producer || exit 1
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # Streamlit Dashboard
+  streamlit-dashboard:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: streamlit-dashboard
+    networks:
+      - kafka-net
+    depends_on:
+      kafka:
+        condition: service_healthy
+      kafka-producer:
+        condition: service_started
+    ports:
+      - "8501:8501"
+    environment:
+      - KAFKA_BROKER=kafka:29092
+      - TOPIC=sensor-data
+      - PYTHONUNBUFFERED=1
+    volumes:
+      - ./pages:/app/pages
+    restart: on-failure
+    healthcheck:
+      test: wget --no-verbose --tries=1 --spider http://localhost:8501 || exit 1
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+      
+  # Kafka Manager - Web UI for managing Kafka
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: kafka-ui
+    networks:
+      - kafka-net
+    ports:
+      - "8080:8080"
+    depends_on:
+      kafka:
+        condition: service_healthy
+    environment:
+      KAFKA_CLUSTERS_0_NAME: local
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:29092
+      KAFKA_CLUSTERS_0_ZOOKEEPER: zookeeper:2181
+      SERVER_SERVLET_CONTEXT_PATH: /
+    restart: on-failure
