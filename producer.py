@@ -279,7 +279,18 @@ if __name__ == '__main__':
             time.sleep(5)  # Wait before retrying
 
     # Create an IoT device instance
-    device_id = os.environ.get("DEVICE_ID", "device_1")
+    # Generate a random jet engine part with a GUID
+    jet_engine_parts = [
+        "compressor_blade", "turbine_disk", "combustion_chamber", 
+        "fuel_nozzle", "high_pressure_shaft", "low_pressure_shaft",
+        "afterburner", "exhaust_nozzle", "inlet_cone", "fan_blade",
+        "igniter", "oil_pump", "bearing_assembly", "variable_stator_vane",
+        "diffuser", "compressor_stator", "turbine_stator", "gearbox"
+    ]
+    
+    part_name = random.choice(jet_engine_parts)
+    device_id = f"{part_name}_{os.urandom(4).hex()}"
+    print(f"Using device ID: {device_id}")
     refresh_rate = float(os.environ.get("REFRESH_RATE", 1))
     device = IoTDevice(device_id, refresh_rate)
 

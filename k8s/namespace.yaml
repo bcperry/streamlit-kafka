@@ -1,0 +1,21 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: kafka-demo
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: app-config
+  namespace: kafka-demo
+data:
+  KAFKA_BROKER: "kafka-service:29092"
+  TOPIC: "sensor-data"
+  POSTGRES_HOST: "postgres-service"
+  POSTGRES_PORT: "5432"
+  POSTGRES_DB: "sensordata"
+  POSTGRES_USER: "postgres"
+  BATCH_SIZE: "10"
+  MAX_POLL_INTERVAL: "1.0"
+  DEVICE_ID: "device_k8s_1"
+  REFRESH_RATE: "1"
