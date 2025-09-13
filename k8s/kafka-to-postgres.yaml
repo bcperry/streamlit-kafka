@@ -15,8 +15,8 @@ spec:
     spec:
       containers:
       - name: kafka-to-postgres
-        image: streamlit-kafka-app:latest
-        imagePullPolicy: Never
+        image: bcperry/streamlit-kafka-app:latest
+        imagePullPolicy: Always
         args: ["python", "kafka_to_postgres.py"]
         env:
         - name: KAFKA_BROKER

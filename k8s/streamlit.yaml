@@ -15,8 +15,8 @@ spec:
     spec:
       containers:
       - name: streamlit-dashboard
-        image: streamlit-kafka-app:latest
-        imagePullPolicy: Never
+        image: bcperry/streamlit-kafka-app:latest
+        imagePullPolicy: Always
         ports:
         - containerPort: 8501
         env:

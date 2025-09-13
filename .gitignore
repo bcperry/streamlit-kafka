@@ -15,3 +15,5 @@ wheels/
 # Docker and logging
 /zookeeper
 /postgres_data
+local_key.pem
+aks-arc-kube-config

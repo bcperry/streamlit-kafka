@@ -13,11 +13,25 @@ spec:
       labels:
         app: postgres
     spec:
+      securityContext:
+        fsGroup: 999
+      initContainers:
+      - name: init-postgres
+        image: busybox:1.35
+        command: ['sh', '-c', 'chown -R 999:999 /var/lib/postgresql/data && rm -rf /var/lib/postgresql/data/lost+found']
+        volumeMounts:
+        - name: postgres-data
+          mountPath: /var/lib/postgresql/data
+        securityContext:
+          runAsUser: 0
       containers:
       - name: postgres
         image: postgres:15-alpine
         ports:
         - containerPort: 5432
+        securityContext:
+          runAsUser: 999
+          runAsGroup: 999
         env:
         - name: POSTGRES_USER
           value: "postgres"
